@@ -27,20 +27,19 @@ class Peminjaman {
     this.user,
   });
 
-  factory Peminjaman.fromJson(Map<String, dynamic> json) {
-    return Peminjaman(
-      id: json['id'],
-      barangId: json['barang_id'],
-      userId: json['user_id'],
-      namaPeminjam: json['nama_peminjam'],
-      alasanMeminjam: json['alasan_meminjam'],
-      jumlah: json['jumlah'],
-      tanggalPinjam: DateTime.parse(json['tanggal_pinjam']),
-      tanggalKembali: DateTime.parse(json['tanggal_kembali']),
-      // Ambil namaBarang dari relasi barang jika ada
-      namaBarang: json['barang'] != null ? json['barang']['namaBarang'] : null,
-       status: json['status'], // ✅ Ambil dari API
-      user: json['user'] != null ? User.fromJson(json['user']) : null,
-    );
-  }
+ factory Peminjaman.fromJson(Map<String, dynamic> json) {
+  return Peminjaman(
+    id: json['id'],
+    barangId: json['barang_id'],
+    userId: json['user_id'],
+    namaPeminjam: json['nama_peminjam'],
+    alasanMeminjam: json['alasan_meminjam'],
+    jumlah: json['jumlah'],
+    tanggalPinjam: DateTime.parse(json['tanggal_pinjam']),
+    tanggalKembali: DateTime.parse(json['tanggal_kembali']),
+    namaBarang: json['barang'] != null ? json['barang']['nama_barang'] : null,
+    status: json['status'],
+    user: json['user'] != null ? User.fromJson(json['user']) : null,
+  );
+}
 }

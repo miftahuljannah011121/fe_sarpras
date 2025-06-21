@@ -19,22 +19,18 @@ class _FormPeminjamanPageState extends State<FormPeminjamanPage> {
   final TextEditingController _alasanController = TextEditingController();
 
   DateTime? _tanggalPinjam;
-  DateTime? _tanggalKembali;
   bool _isLoading = false;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    // Set tanggal pinjam default ke hari ini
     _tanggalPinjam = DateTime.now();
-    // Set tanggal kembali default ke besok
-    _tanggalKembali = DateTime.now().add(const Duration(days: 1));
   }
 
   bool _validateDates() {
-    if (_tanggalPinjam == null || _tanggalKembali == null) {
-      setState(() => _errorMessage = 'Tanggal pinjam dan kembali harus dipilih');
+    if (_tanggalPinjam == null) {
+      setState(() => _errorMessage = 'Tanggal pinjam harus dipilih');
       return false;
     }
 
@@ -43,81 +39,73 @@ class _FormPeminjamanPageState extends State<FormPeminjamanPage> {
       return false;
     }
 
-    if (_tanggalKembali!.isBefore(_tanggalPinjam!)) {
-      setState(() => _errorMessage = 'Tanggal kembali harus setelah tanggal pinjam');
-      return false;
-    }
-
     setState(() => _errorMessage = null);
     return true;
   }
 
   Future<void> _submitForm() async {
-  setState(() => _errorMessage = null);
+    setState(() => _errorMessage = null);
 
-  if (!_formKey.currentState!.validate() || !_validateDates()) {
-    return;
+    if (!_formKey.currentState!.validate() || !_validateDates()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final userId = prefs.getInt('user_id');
+      final userName = prefs.getString('user_name');
+
+      if (token == null || userId == null || userName == null) {
+        throw Exception('Gagal mengakses data pengguna. Silakan login ulang.');
+      }
+
+      final barangId = widget.barang.id;
+      if (barangId == null) {
+        throw Exception('Barang tidak valid (ID tidak tersedia).');
+      }
+
+      final jumlah = int.tryParse(_jumlahController.text.trim());
+      if (jumlah == null || jumlah <= 0) {
+        throw Exception('Jumlah tidak valid.');
+      }
+
+      final tanggalKembali = _tanggalPinjam!.add(const Duration(days: 1));
+
+      final peminjaman = await PeminjamanService.createPeminjaman(
+        token: token,
+        userId: userId,
+        barangId: barangId,
+        namaPeminjam: userName,
+        alasanMeminjam: _alasanController.text.trim(),
+        jumlah: jumlah,
+        tanggalPinjam: _tanggalPinjam!,
+        tanggalKembali: tanggalKembali,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Peminjaman berhasil diajukan'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pop(context, peminjaman);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _errorMessage = e.toString());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Gagal mengajukan peminjaman: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-
-  setState(() => _isLoading = true);
-
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-    final userId = prefs.getInt('user_id');
-    final userName = prefs.getString('user_name');
-
-    // Null checks
-    if (token == null || userId == null || userName == null) {
-      throw Exception('Gagal mengakses data pengguna. Silakan login ulang.');
-    }
-
-    final barangId = widget.barang.id;
-    if (barangId == null) {
-      throw Exception('Barang tidak valid (ID tidak tersedia).');
-    }
-
-    final jumlah = int.tryParse(_jumlahController.text.trim());
-    if (jumlah == null || jumlah <= 0) {
-      throw Exception('Jumlah tidak valid.');
-    }
-
-    final peminjaman = await PeminjamanService.createPeminjaman(
-      token: token,
-      userId: userId,
-      barangId: barangId,
-      namaPeminjam: userName,
-      alasanMeminjam: _alasanController.text.trim(),
-      jumlah: jumlah,
-      tanggalPinjam: _tanggalPinjam!,
-      tanggalKembali: _tanggalKembali!,
-    );
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Peminjaman berhasil diajukan'),
-        backgroundColor: Colors.green,
-      ),
-    );
-
-    Navigator.pop(context, peminjaman);
-  } catch (e) {
-    setState(() => _errorMessage = e.toString());
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('berhasil dan tidak eror sama sekali'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
-  }
-}
-
 
   @override
   void dispose() {
@@ -159,7 +147,6 @@ class _FormPeminjamanPageState extends State<FormPeminjamanPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
               TextFormField(
                 controller: _jumlahController,
@@ -170,70 +157,31 @@ class _FormPeminjamanPageState extends State<FormPeminjamanPage> {
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Jumlah wajib diisi';
-                  }
+                  if (value == null || value.isEmpty) return 'Jumlah wajib diisi';
                   final jumlah = int.tryParse(value);
-                  if (jumlah == null || jumlah <= 0) {
-                    return 'Jumlah harus lebih dari 0';
-                  }
-                  if (jumlah > widget.barang.stok) {
-                    return 'Jumlah melebihi stok yang tersedia';
-                  }
+                  if (jumlah == null || jumlah <= 0) return 'Jumlah harus lebih dari 0';
+                  if (jumlah > widget.barang.stok) return 'Jumlah melebihi stok yang tersedia';
                   return null;
                 },
               ),
               const SizedBox(height: 16),
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      title: Text(
-                        'Tanggal Pinjam: ${_tanggalPinjam == null ? "-" : DateFormat('dd MMM yyyy').format(_tanggalPinjam!)}',
-                      ),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: _tanggalPinjam ?? DateTime.now(),
-                          firstDate: DateTime.now(),
-                          lastDate: DateTime.now().add(const Duration(days: 365)),
-                        );
-                        if (picked != null) {
-                          setState(() => _tanggalPinjam = picked);
-                          _validateDates();
-                        }
-                      },
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      title: Text(
-                        'Tanggal Kembali: ${_tanggalKembali == null ? "-" : DateFormat('dd MMM yyyy').format(_tanggalKembali!)}',
-                      ),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: () async {
-                        if (_tanggalPinjam == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Pilih tanggal pinjam terlebih dahulu'),
-                            ),
-                          );
-                          return;
-                        }
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: _tanggalKembali ?? _tanggalPinjam!.add(const Duration(days: 1)),
-                          firstDate: _tanggalPinjam!,
-                          lastDate: _tanggalPinjam!.add(const Duration(days: 365)),
-                        );
-                        if (picked != null) {
-                          setState(() => _tanggalKembali = picked);
-                          _validateDates();
-                        }
-                      },
-                    ),
-                  ],
+              ListTile(
+                title: Text(
+                  'Tanggal Pinjam: ${_tanggalPinjam == null ? "-" : DateFormat('dd MMM yyyy').format(_tanggalPinjam!)}',
                 ),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _tanggalPinjam ?? DateTime.now(),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (picked != null) {
+                    setState(() => _tanggalPinjam = picked);
+                    _validateDates();
+                  }
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -246,12 +194,8 @@ class _FormPeminjamanPageState extends State<FormPeminjamanPage> {
                 ),
                 maxLines: 3,
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Alasan wajib diisi';
-                  }
-                  if (value.trim().length < 10) {
-                    return 'Alasan minimal 10 karakter';
-                  }
+                  if (value == null || value.trim().isEmpty) return 'Alasan wajib diisi';
+                  if (value.trim().length < 10) return 'Alasan minimal 10 karakter';
                   return null;
                 },
               ),
@@ -264,7 +208,7 @@ class _FormPeminjamanPageState extends State<FormPeminjamanPage> {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Color.fromARGB(255, 0, 0, 0),
+                          color: Colors.black,
                         ),
                       )
                     : const Icon(Icons.send),
